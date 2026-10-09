@@ -8,6 +8,7 @@ A small personal progress tracker.
 
 - Tracks percent complete, days left, weeks left, and days done
 - Custom event name, dates, and accent color
+- Configurable default light or dark theme
 - Simple todo list for goals to finish before the event ends
 
 ## Run Locally

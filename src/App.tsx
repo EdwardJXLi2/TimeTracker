@@ -17,12 +17,14 @@ type EventDates = {
 type SettingsDraft = EventDates & {
   eventName: string;
   accentColor: string;
+  defaultTheme: Theme;
   showDateTimeBanner: boolean;
 };
 
 type TrackerState = {
   eventName: string;
   accentColor: string;
+  defaultTheme: Theme;
   showDateTimeBanner: boolean;
   dates: EventDates;
   todos: Todo[];
@@ -74,6 +76,7 @@ const DEFAULT_TODOS: Todo[] = [
 const DEFAULT_STATE: TrackerState = {
   eventName: DEFAULT_EVENT_NAME,
   accentColor: DEFAULT_ACCENT_COLOR,
+  defaultTheme: "light",
   showDateTimeBanner: false,
   dates: DEFAULT_DATES,
   todos: DEFAULT_TODOS
@@ -135,9 +138,9 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function getInitialTheme(): Theme {
+function getStoredTheme(): Theme | null {
   if (typeof window === "undefined") {
-    return "light";
+    return null;
   }
 
   try {
@@ -146,10 +149,10 @@ function getInitialTheme(): Theme {
       return savedTheme;
     }
   } catch {
-    return "light";
+    return null;
   }
 
-  return "light";
+  return null;
 }
 
 function getFaviconDataUrl(accentColor: string): string {
@@ -211,6 +214,7 @@ export default function App() {
   const [settingsDraft, setSettingsDraft] = useState<SettingsDraft>({
     eventName: DEFAULT_STATE.eventName,
     accentColor: DEFAULT_STATE.accentColor,
+    defaultTheme: DEFAULT_STATE.defaultTheme,
     showDateTimeBanner: DEFAULT_STATE.showDateTimeBanner,
     ...DEFAULT_STATE.dates
   });
@@ -225,7 +229,9 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [stateError, setStateError] = useState<string | null>(null);
-  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const [theme, setTheme] = useState<Theme>(
+    () => getStoredTheme() ?? DEFAULT_STATE.defaultTheme
+  );
 
   const { accentColor, dates, eventName, showDateTimeBanner, todos } =
     trackerState;
@@ -247,11 +253,6 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-    } catch {
-      // Theme selection still applies for this session if storage is unavailable.
-    }
   }, [theme]);
 
   useEffect(() => {
@@ -302,9 +303,11 @@ export default function App() {
         }
 
         setTrackerState(nextState);
+        setTheme(getStoredTheme() ?? nextState.defaultTheme);
         setSettingsDraft({
           eventName: nextState.eventName,
           accentColor: nextState.accentColor,
+          defaultTheme: nextState.defaultTheme,
           showDateTimeBanner: nextState.showDateTimeBanner,
           ...nextState.dates
         });
@@ -376,8 +379,32 @@ export default function App() {
       return;
     }
 
-    setSettingsDraft({ eventName, accentColor, showDateTimeBanner, ...dates });
+    setSettingsDraft({
+      eventName,
+      accentColor,
+      defaultTheme: trackerState.defaultTheme,
+      showDateTimeBanner,
+      ...dates
+    });
     setIsSettingsOpen(true);
+  }
+
+  function changeTheme(nextTheme: Theme) {
+    setTheme(nextTheme);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    } catch {
+      // Theme selection still applies for this session if storage is unavailable.
+    }
+  }
+
+  function applyDefaultTheme(nextTheme: Theme) {
+    setTheme(nextTheme);
+    try {
+      window.localStorage.removeItem(THEME_STORAGE_KEY);
+    } catch {
+      // The shared default still applies for this session.
+    }
   }
 
   function updateSettingsDraft<K extends keyof SettingsDraft>(
@@ -398,12 +425,16 @@ export default function App() {
       ...trackerState,
       eventName: nextEventName,
       accentColor: previewAccentColor,
+      defaultTheme: settingsDraft.defaultTheme,
       showDateTimeBanner: settingsDraft.showDateTimeBanner,
       dates: {
         startDate: settingsDraft.startDate,
         endDate: settingsDraft.endDate
       }
     });
+    if (settingsDraft.defaultTheme !== trackerState.defaultTheme) {
+      applyDefaultTheme(settingsDraft.defaultTheme);
+    }
     setIsSettingsOpen(false);
   }
 
@@ -420,10 +451,12 @@ export default function App() {
     }
 
     void saveTrackerState(DEFAULT_STATE);
+    applyDefaultTheme(DEFAULT_STATE.defaultTheme);
     setNewTodo("");
     setSettingsDraft({
       eventName: DEFAULT_EVENT_NAME,
       accentColor: DEFAULT_ACCENT_COLOR,
+      defaultTheme: DEFAULT_STATE.defaultTheme,
       showDateTimeBanner: DEFAULT_STATE.showDateTimeBanner,
       ...DEFAULT_DATES
     });
@@ -572,9 +605,7 @@ export default function App() {
             className="secondary-top-button theme-toggle top-theme-toggle"
             type="button"
             onClick={() =>
-              setTheme((currentTheme) =>
-                currentTheme === "dark" ? "light" : "dark"
-              )
+              changeTheme(theme === "dark" ? "light" : "dark")
             }
             aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
             aria-pressed={theme === "dark"}
@@ -653,22 +684,30 @@ export default function App() {
               </label>
 
               <div className="settings-field">
-                <span>Theme</span>
-                <div className="theme-choice" role="group" aria-label="Theme">
+                <span>Default theme</span>
+                <div
+                  className="theme-choice"
+                  role="group"
+                  aria-label="Default theme"
+                >
                   <button
-                    className={theme === "light" ? "active" : ""}
+                    className={
+                      settingsDraft.defaultTheme === "light" ? "active" : ""
+                    }
                     type="button"
-                    onClick={() => setTheme("light")}
-                    aria-pressed={theme === "light"}
+                    onClick={() => updateSettingsDraft("defaultTheme", "light")}
+                    aria-pressed={settingsDraft.defaultTheme === "light"}
                   >
                     <Sun aria-hidden="true" size={20} strokeWidth={2.5} />
                     Light
                   </button>
                   <button
-                    className={theme === "dark" ? "active" : ""}
+                    className={
+                      settingsDraft.defaultTheme === "dark" ? "active" : ""
+                    }
                     type="button"
-                    onClick={() => setTheme("dark")}
-                    aria-pressed={theme === "dark"}
+                    onClick={() => updateSettingsDraft("defaultTheme", "dark")}
+                    aria-pressed={settingsDraft.defaultTheme === "dark"}
                   >
                     <Moon aria-hidden="true" size={20} strokeWidth={2.5} />
                     Dark
